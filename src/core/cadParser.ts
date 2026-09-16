@@ -244,9 +244,184 @@ export class DiscreteCADParser {
   }
 
   /**
+   * Fast In-Browser Discrete STEP (ISO-10303-21) Entity Parser.
+   * Extracts Cartesian points, vertices, and polyloop / planar face facets.
+   */
+  public static parseSTEP(text: string): ParsedMeshData {
+    const cartesianPoints = new Map<number, [number, number, number]>();
+    const pointRegex = /#(\d+)\s*=\s*CARTESIAN_POINT\s*\([^,]*,\s*\(\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\)\s*\)/g;
+    let match: RegExpExecArray | null;
+    while ((match = pointRegex.exec(text)) !== null) {
+      const id = parseInt(match[1], 10);
+      const x = parseFloat(match[2]);
+      const y = parseFloat(match[3]);
+      const z = parseFloat(match[4]);
+      if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+        cartesianPoints.set(id, [x, y, z]);
+      }
+    }
+
+    const vertexPoints = new Map<number, number>();
+    const vertexRegex = /#(\d+)\s*=\s*VERTEX_POINT\s*\([^,]*,\s*#(\d+)\s*\)/g;
+    while ((match = vertexRegex.exec(text)) !== null) {
+      const vId = parseInt(match[1], 10);
+      const pId = parseInt(match[2], 10);
+      vertexPoints.set(vId, pId);
+    }
+
+    const resolvePoint = (id: number): [number, number, number] | null => {
+      if (cartesianPoints.has(id)) return cartesianPoints.get(id)!;
+      if (vertexPoints.has(id)) {
+        const pId = vertexPoints.get(id)!;
+        if (cartesianPoints.has(pId)) return cartesianPoints.get(pId)!;
+      }
+      return null;
+    };
+
+    const triangles: Array<[[number, number, number], [number, number, number], [number, number, number]]> = [];
+    const polyLoopRegex = /#\d+\s*=\s*POLY_LOOP\s*\([^,]*,\s*\(([^)]+)\)\s*\)/g;
+    while ((match = polyLoopRegex.exec(text)) !== null) {
+      const refs = match[1].match(/#(\d+)/g);
+      if (refs && refs.length >= 3) {
+        const loopPts: Array<[number, number, number]> = [];
+        for (const ref of refs) {
+          const id = parseInt(ref.replace('#', ''), 10);
+          const pt = resolvePoint(id);
+          if (pt) loopPts.push(pt);
+        }
+        if (loopPts.length >= 3) {
+          const p0 = loopPts[0];
+          for (let i = 1; i < loopPts.length - 1; i++) {
+            triangles.push([p0, loopPts[i], loopPts[i + 1]]);
+          }
+        }
+      }
+    }
+
+    if (triangles.length === 0 && cartesianPoints.size >= 4) {
+      const pts = Array.from(cartesianPoints.values());
+      for (let i = 0; i < pts.length - 2; i += 3) {
+        triangles.push([pts[i], pts[i + 1], pts[i + 2]]);
+      }
+      if (triangles.length === 0 && pts.length >= 4) {
+        triangles.push([pts[0], pts[1], pts[2]]);
+        triangles.push([pts[0], pts[2], pts[3]]);
+        triangles.push([pts[0], pts[3], pts[1]]);
+        triangles.push([pts[1], pts[2], pts[3]]);
+      }
+    }
+
+    const numFaces = triangles.length;
+    const rawVertices = new Float32Array(numFaces * 9);
+    const rawNormals = new Float32Array(numFaces * 9);
+    const faceNormals = new Float32Array(numFaces * 3);
+    const faceCenters = new Float32Array(numFaces * 3);
+    const faceAreas = new Float32Array(numFaces);
+
+    for (let f = 0; f < numFaces; f++) {
+      const [p0, p1, p2] = triangles[f];
+      const vIdx = f * 9;
+      rawVertices[vIdx] = p0[0]; rawVertices[vIdx + 1] = p0[1]; rawVertices[vIdx + 2] = p0[2];
+      rawVertices[vIdx + 3] = p1[0]; rawVertices[vIdx + 4] = p1[1]; rawVertices[vIdx + 5] = p1[2];
+      rawVertices[vIdx + 6] = p2[0]; rawVertices[vIdx + 7] = p2[1]; rawVertices[vIdx + 8] = p2[2];
+
+      const e1x = p1[0] - p0[0], e1y = p1[1] - p0[1], e1z = p1[2] - p0[2];
+      const e2x = p2[0] - p0[0], e2y = p2[1] - p0[1], e2z = p2[2] - p0[2];
+      const cx = e1y * e2z - e1z * e2y;
+      const cy = e1z * e2x - e1x * e2z;
+      const cz = e1x * e2y - e1y * e2x;
+      const crossLen = Math.sqrt(cx * cx + cy * cy + cz * cz);
+      const nx = crossLen > 1e-12 ? cx / crossLen : 0;
+      const ny = crossLen > 1e-12 ? cy / crossLen : 0;
+      const nz = crossLen > 1e-12 ? cz / crossLen : 1;
+
+      rawNormals[vIdx] = nx; rawNormals[vIdx + 1] = ny; rawNormals[vIdx + 2] = nz;
+      rawNormals[vIdx + 3] = nx; rawNormals[vIdx + 4] = ny; rawNormals[vIdx + 5] = nz;
+      rawNormals[vIdx + 6] = nx; rawNormals[vIdx + 7] = ny; rawNormals[vIdx + 8] = nz;
+
+      const fIdx = f * 3;
+      faceNormals[fIdx] = nx; faceNormals[fIdx + 1] = ny; faceNormals[fIdx + 2] = nz;
+      faceCenters[fIdx] = (p0[0] + p1[0] + p2[0]) / 3.0;
+      faceCenters[fIdx + 1] = (p0[1] + p1[1] + p2[1]) / 3.0;
+      faceCenters[fIdx + 2] = (p0[2] + p1[2] + p2[2]) / 3.0;
+      faceAreas[f] = 0.5 * crossLen;
+    }
+
+    return this.buildIndexedMesh(rawVertices, rawNormals, faceNormals, faceCenters, faceAreas, numFaces);
+  }
+
+  /**
+   * Fast In-Browser Discrete IGES Entity Parser.
+   * Parses IGES (ASME Y14.26M) copious data, points, and planar facets.
+   */
+  public static parseIGES(text: string): ParsedMeshData {
+    const lines = text.split('\n');
+    const points: Array<[number, number, number]> = [];
+
+    for (const line of lines) {
+      if (line.length < 73) continue;
+      const section = line[72];
+      if (section === 'P') {
+        const params = line.slice(0, 64).split(/[,;]/).map(s => s.trim()).filter(Boolean);
+        for (let i = 0; i < params.length - 2; i += 3) {
+          const x = parseFloat(params[i]);
+          const y = parseFloat(params[i + 1]);
+          const z = parseFloat(params[i + 2]);
+          if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+            points.push([x, y, z]);
+          }
+        }
+      }
+    }
+
+    const triangles: Array<[[number, number, number], [number, number, number], [number, number, number]]> = [];
+    for (let i = 0; i < points.length - 2; i += 3) {
+      triangles.push([points[i], points[i + 1], points[i + 2]]);
+    }
+
+    const numFaces = triangles.length;
+    const rawVertices = new Float32Array(numFaces * 9);
+    const rawNormals = new Float32Array(numFaces * 9);
+    const faceNormals = new Float32Array(numFaces * 3);
+    const faceCenters = new Float32Array(numFaces * 3);
+    const faceAreas = new Float32Array(numFaces);
+
+    for (let f = 0; f < numFaces; f++) {
+      const [p0, p1, p2] = triangles[f];
+      const vIdx = f * 9;
+      rawVertices[vIdx] = p0[0]; rawVertices[vIdx + 1] = p0[1]; rawVertices[vIdx + 2] = p0[2];
+      rawVertices[vIdx + 3] = p1[0]; rawVertices[vIdx + 4] = p1[1]; rawVertices[vIdx + 5] = p1[2];
+      rawVertices[vIdx + 6] = p2[0]; rawVertices[vIdx + 7] = p2[1]; rawVertices[vIdx + 8] = p2[2];
+
+      const e1x = p1[0] - p0[0], e1y = p1[1] - p0[1], e1z = p1[2] - p0[2];
+      const e2x = p2[0] - p0[0], e2y = p2[1] - p0[1], e2z = p2[2] - p0[2];
+      const cx = e1y * e2z - e1z * e2y;
+      const cy = e1z * e2x - e1x * e2z;
+      const cz = e1x * e2y - e1y * e2x;
+      const crossLen = Math.sqrt(cx * cx + cy * cy + cz * cz);
+      const nx = crossLen > 1e-12 ? cx / crossLen : 0;
+      const ny = crossLen > 1e-12 ? cy / crossLen : 0;
+      const nz = crossLen > 1e-12 ? cz / crossLen : 1;
+
+      rawNormals[vIdx] = nx; rawNormals[vIdx + 1] = ny; rawNormals[vIdx + 2] = nz;
+      rawNormals[vIdx + 3] = nx; rawNormals[vIdx + 4] = ny; rawNormals[vIdx + 5] = nz;
+      rawNormals[vIdx + 6] = nx; rawNormals[vIdx + 7] = ny; rawNormals[vIdx + 8] = nz;
+
+      const fIdx = f * 3;
+      faceNormals[fIdx] = nx; faceNormals[fIdx + 1] = ny; faceNormals[fIdx + 2] = nz;
+      faceCenters[fIdx] = (p0[0] + p1[0] + p2[0]) / 3.0;
+      faceCenters[fIdx + 1] = (p0[1] + p1[1] + p2[1]) / 3.0;
+      faceCenters[fIdx + 2] = (p0[2] + p1[2] + p2[2]) / 3.0;
+      faceAreas[f] = 0.5 * crossLen;
+    }
+
+    return this.buildIndexedMesh(rawVertices, rawNormals, faceNormals, faceCenters, faceAreas, numFaces);
+  }
+
+  /**
    * Deduplicates vertices using a precision-grid spatial hash and constructs face adjacency maps.
    */
-  private static buildIndexedMesh(
+  public static buildIndexedMesh(
     rawVertices: Float32Array,
     rawNormals: Float32Array,
     faceNormals: Float32Array,

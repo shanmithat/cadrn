@@ -7,6 +7,7 @@
 import React from 'react';
 import {
   AlertTriangle,
+  Binary,
   Boxes,
   CheckCircle2,
   Compass,
@@ -15,6 +16,8 @@ import {
   Gauge,
   Layers,
   Scale,
+  Sparkles,
+  Tag,
   Wrench,
 } from 'lucide-react';
 import { AssemblySummary, ComponentProfile } from '../core/types';
@@ -150,6 +153,7 @@ export const EngineeringDashboard: React.FC<EngineeringDashboardProps> = ({
                 <th className="p-3">Part ID</th>
                 <th className="p-3">Classification (AI)</th>
                 <th className="p-3">Manufacturing</th>
+                <th className="p-3">OEM Catalog Match (BOM)</th>
                 <th className="p-3 text-right">Volume (mm³)</th>
                 <th className="p-3 text-right">Mass (kg)</th>
                 <th className="p-3 text-right">A/V Ratio</th>
@@ -185,6 +189,18 @@ export const EngineeringDashboard: React.FC<EngineeringDashboardProps> = ({
                       <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
                         {comp.manufacturingProcess}
                       </span>
+                    </td>
+                    <td className="p-3">
+                      {comp.oemMatch ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-emerald-400 font-semibold">{comp.oemMatch.partNumber}</span>
+                          <span className="text-[10px] bg-emerald-950/60 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-800/60">
+                            {comp.oemMatch.similarityPercent}%
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
                     </td>
                     <td className="p-3 text-right font-mono">{comp.volumeMm3.toLocaleString()}</td>
                     <td className="p-3 text-right font-mono">{comp.massKg.toFixed(4)}</td>
@@ -303,6 +319,76 @@ export const EngineeringDashboard: React.FC<EngineeringDashboardProps> = ({
                   Passes standard automotive tooling rules.
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* AI/ML Multi-Task Profiling & OEM BOM Metric Match */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-1 border-t border-slate-800/80">
+            {/* OEM Catalog Match */}
+            <div className="bg-slate-950/80 p-3.5 rounded-lg border border-emerald-500/30 flex flex-col gap-2">
+              <div className="flex justify-between items-center">
+                <div className="font-bold text-emerald-400 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  Renault-Nissan OEM BOM Match (512-D Zero-Shot)
+                </div>
+                {selectedComp.oemMatch && (
+                  <span className="bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded text-[11px] border border-emerald-500/40">
+                    {selectedComp.oemMatch.similarityPercent}% Match
+                  </span>
+                )}
+              </div>
+              {selectedComp.oemMatch ? (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-slate-400">Part Number:</span>
+                    <span className="font-mono font-bold text-emerald-300 text-sm">
+                      {selectedComp.oemMatch.partNumber}
+                    </span>
+                  </div>
+                  <div className="text-slate-300 text-[11px] leading-relaxed">
+                    {selectedComp.oemMatch.description}
+                  </div>
+                  <div className="flex justify-between text-[11px] pt-1 border-t border-slate-800/60">
+                    <span className="text-slate-400">Platform BOM:</span>
+                    <span className="text-slate-200 font-medium">{selectedComp.oemMatch.catalogBOM}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-400">
+                    <Binary className="w-3.5 h-3.5 text-sky-400" />
+                    <span>512-D L2 Unit Hypersphere Vector (Cosine Metric Retrieval)</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-slate-500 italic">No standard OEM BOM catalog match found.</div>
+              )}
+            </div>
+
+            {/* Machining Features */}
+            <div className="bg-slate-950/80 p-3.5 rounded-lg border border-indigo-500/30 flex flex-col justify-between gap-2">
+              <div>
+                <div className="font-bold text-indigo-400 uppercase tracking-wider text-[10px] flex items-center gap-1.5 mb-2">
+                  <Tag className="w-3.5 h-3.5 text-indigo-400" />
+                  Detected Machining & Micro-Geometry Features
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedComp.machiningFeatures && selectedComp.machiningFeatures.length > 0 ? (
+                    selectedComp.machiningFeatures.map((feat, idx) => (
+                      <span
+                        key={idx}
+                        className="bg-indigo-950/70 text-indigo-200 border border-indigo-700/50 px-2 py-0.5 rounded text-[11px] font-medium"
+                      >
+                        ✓ {feat}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-slate-500 italic">Standard smooth surface geometry</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-[10px] text-slate-400 flex items-center justify-between border-t border-slate-800/60 pt-2">
+                <span>MultiTaskCADNet Inference</span>
+                <span className="text-emerald-400 font-mono">WebGPU / Wasm SIMD</span>
+              </div>
             </div>
           </div>
         </div>

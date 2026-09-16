@@ -15,17 +15,41 @@ class ComponentClass(str, Enum):
     SHAFT = "Shaft"
     GEAR = "Gear"
     SHEET_METAL_PANEL = "Sheet Metal Panel"
+    SUSPENSION_ARM = "Suspension Arm"
     STRUCTURAL_FRAME = "Structural Frame"
     UNKNOWN = "Unknown / Custom Component"
 
 
 class ManufacturingProcess(str, Enum):
-    STAMPED_FORMED = "Stamped/Formed"
-    CNC_MILLED = "CNC Milled"
-    HIGH_PRESSURE_DIE_CAST = "High-Pressure Die Cast"
+    HPDC = "High-Pressure Die Casting (HPDC)"
+    CNC_3AXIS = "3-Axis CNC Milled"
+    CNC_5AXIS = "5-Axis CNC Milled"
+    STAMPING = "Sheet Metal Stamping"
     ADDITIVE = "Additive Manufacturing"
     INJECTION_MOLDED = "Injection Molded"
     UNKNOWN = "Unknown / Undetermined"
+    # Backward-compatible aliases
+    STAMPED_FORMED = "Sheet Metal Stamping"
+    CNC_MILLED = "3-Axis CNC Milled"
+    HIGH_PRESSURE_DIE_CAST = "High-Pressure Die Casting (HPDC)"
+
+
+class MachiningFeature(str, Enum):
+    THRU_HOLES = "Thru-Holes"
+    BLIND_HOLES = "Blind Holes"
+    POCKETS = "Internal Pockets"
+    CHAMFERS = "Chamfers / Fillets"
+    O_RING_GROOVES = "O-Ring Seal Grooves"
+
+
+class OEMPartMatch(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    part_number: str = Field(..., description="Standard Renault-Nissan OEM Part Number")
+    description: str = Field(..., description="Engineering component specification")
+    primary_class: str = Field(..., description="Component class")
+    process: str = Field(..., description="Manufacturing process")
+    catalog_bom: str = Field(..., description="Platform BOM vehicle allocation")
+    similarity_score: float = Field(..., description="Cosine similarity confidence percentage")
 
 
 class SurfaceType(str, Enum):
@@ -107,6 +131,9 @@ class ComponentProfile(BaseModel):
     area_to_volume_ratio: float = Field(..., description="Surface area / volume ratio (mm^-1)")
     mass_kg: float = Field(..., description="Mass assuming standard steel density 7850 kg/m^3")
     face_count: int = Field(0, description="Number of B-Rep faces or mesh facets comprising this sub-part")
+    machining_features: List[str] = Field(default_factory=list, description="Detected machining features (thru-holes, blind holes, pockets, chamfers, grooves)")
+    oem_match: Optional[Dict[str, Any]] = Field(None, description="Zero-shot cosine similarity match from Renault-Nissan OEM Catalog")
+    embedding_512: Optional[List[float]] = Field(None, description="512-D L2-normalized metric learning embedding vector")
 
 
 class AssemblySummary(BaseModel):

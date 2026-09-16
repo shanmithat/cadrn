@@ -1,6 +1,10 @@
 /**
  * Core domain types for AutoCAD-Profiler Client-Side SPA.
  * Built for Renault Nissan Automotive R&D specification.
+ * Supports the 3 Core AI/ML Tasks:
+ * 1. Semantic & Boundary Disambiguation
+ * 2. Multi-Task Classification (Semantic, Manufacturing, Machining Features)
+ * 3. 512-D Metric Learning & OEM Catalog Retrieval
  */
 
 export enum ComponentClass {
@@ -11,16 +15,34 @@ export enum ComponentClass {
   SHAFT = 'Shaft',
   GEAR = 'Gear',
   SHEET_METAL_PANEL = 'Sheet Metal Panel',
+  SUSPENSION_ARM = 'Suspension Arm',
+  DUCT = 'Air/Fluid Duct',
   STRUCTURAL_FRAME = 'Structural Frame',
   UNKNOWN = 'Unknown / Custom Component',
 }
 
 export enum ManufacturingProcess {
-  STAMPED_FORMED = 'Stamped/Formed',
-  CNC_MILLED = 'CNC Milled',
-  HIGH_PRESSURE_DIE_CAST = 'High-Pressure Die Cast',
+  HPDC = 'High-Pressure Die Casting (HPDC)',
+  CNC_3AXIS = '3-Axis CNC Milled',
+  CNC_5AXIS = '5-Axis CNC Milled',
+  STAMPING = 'Sheet Metal Stamping',
   ADDITIVE = 'Additive Manufacturing',
   UNKNOWN = 'Unknown / Undetermined',
+}
+
+export enum MachiningFeature {
+  THRU_HOLES = 'Thru-Holes',
+  BLIND_HOLES = 'Blind Holes',
+  POCKETS = 'Internal Pockets',
+  CHAMFERS = 'Chamfers / Fillets',
+  O_RING_GROOVES = 'O-Ring Seal Grooves',
+}
+
+export interface OEMPartMatch {
+  partNumber: string;
+  description: string;
+  similarityPercent: number;
+  catalogBOM: string;
 }
 
 export interface Vector3D {
@@ -59,6 +81,9 @@ export interface ComponentProfile {
   partId: string;
   classification: ComponentClass;
   manufacturingProcess: ManufacturingProcess;
+  machiningFeatures: string[];
+  oemMatch: OEMPartMatch;
+  embedding512: number[];
   volumeMm3: number;
   surfaceAreaMm2: number;
   centroidMm: [number, number, number];

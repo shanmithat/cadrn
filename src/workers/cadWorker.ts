@@ -243,10 +243,17 @@ async function parseParametricWasm(
       faceAreas[f] = 1.0;
     }
 
-    return (DiscreteCADParser as any).buildIndexedMesh(rawVertices, rawNormals, faceNormals, faceCenters, faceAreas, numFaces);
+    return DiscreteCADParser.buildIndexedMesh(rawVertices, rawNormals, faceNormals, faceCenters, faceAreas, numFaces);
   } catch (wasmError) {
     console.warn('[cadWorker] OpenCASCADE Wasm unavailable or failed; using robust discrete fallback:', wasmError);
-    // Return discrete mesh fallback from buffer
+    const text = new TextDecoder().decode(buffer);
+    const isStep = fileName.toLowerCase().endsWith('.step') || fileName.toLowerCase().endsWith('.stp');
+    const isIges = fileName.toLowerCase().endsWith('.iges') || fileName.toLowerCase().endsWith('.igs');
+    if (isStep) {
+      return DiscreteCADParser.parseSTEP(text);
+    } else if (isIges) {
+      return DiscreteCADParser.parseIGES(text);
+    }
     return DiscreteCADParser.parseSTL(buffer);
   }
 }

@@ -97,6 +97,7 @@ export const ReportExportModal: React.FC<ReportExportModalProps> = ({
         c.partId,
         c.classification,
         c.manufacturingProcess,
+        c.oemMatch ? `${c.oemMatch.partNumber} (${c.oemMatch.similarityPercent}%)` : '—',
         c.volumeMm3.toLocaleString(),
         c.massKg.toFixed(4),
         c.areaToVolumeRatio.toFixed(3),
@@ -106,18 +107,19 @@ export const ReportExportModal: React.FC<ReportExportModalProps> = ({
       autoTable(doc, {
         startY: finalY + 11,
         theme: 'striped',
-        head: [['Part ID', 'Classification', 'Process', 'Volume (mm³)', 'Mass (kg)', 'A/V (mm⁻¹)', 'DFM Audit']],
+        head: [['Part ID', 'Classification', 'Process', 'OEM Match (BOM)', 'Volume (mm³)', 'Mass (kg)', 'A/V (mm⁻¹)', 'DFM Audit']],
         body: bomRows,
-        headStyles: { fillColor: [185, 28, 28], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
-        bodyStyles: { fontSize: 7, textColor: [30, 30, 30] },
+        headStyles: { fillColor: [185, 28, 28], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
+        bodyStyles: { fontSize: 6.5, textColor: [30, 30, 30] },
         columnStyles: {
-          0: { fontStyle: 'bold', cellWidth: 20 },
-          1: { cellWidth: 35 },
-          2: { cellWidth: 35 },
-          3: { halign: 'right', cellWidth: 28 },
-          4: { halign: 'right', cellWidth: 24 },
+          0: { fontStyle: 'bold', cellWidth: 18 },
+          1: { cellWidth: 28 },
+          2: { cellWidth: 28 },
+          3: { cellWidth: 32, textColor: [16, 120, 60] },
+          4: { halign: 'right', cellWidth: 22 },
           5: { halign: 'right', cellWidth: 20 },
-          6: { halign: 'center', cellWidth: 24 },
+          6: { halign: 'right', cellWidth: 18 },
+          7: { halign: 'center', cellWidth: 20 },
         },
         margin: { left: 12, right: 12 },
       });
@@ -145,39 +147,41 @@ export const ReportExportModal: React.FC<ReportExportModalProps> = ({
       doc.text('3. CONSTITUENT COMPONENT METROLOGY & INERTIA TENSORS', 12, 22);
 
       let currentY = 27;
-      const displayComps = components.slice(0, 6);
+      const displayComps = components.slice(0, 5);
 
       displayComps.forEach((comp) => {
         doc.setDrawColor(200, 200, 200);
         doc.setFillColor(248, 250, 252);
-        doc.roundedRect(12, currentY, 186, 23, 2, 2, 'FD');
+        doc.roundedRect(12, currentY, 186, 27, 2, 2, 'FD');
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
+        doc.setFontSize(8);
         doc.setTextColor(15, 23, 42);
-        doc.text(`Part: ${comp.partId}`, 15, currentY + 5);
+        const oemInfo = comp.oemMatch ? ` | OEM BOM: ${comp.oemMatch.partNumber} (${comp.oemMatch.similarityPercent}% Match)` : '';
+        doc.text(`Part: ${comp.partId}${oemInfo}`, 15, currentY + 5);
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.5);
+        doc.setFontSize(7);
         doc.setTextColor(70, 70, 70);
-        doc.text(`Class: ${comp.classification} | Process: ${comp.manufacturingProcess}`, 55, currentY + 5);
-        doc.text(`Mass: ${comp.massKg.toFixed(4)} kg | Vol: ${comp.volumeMm3.toLocaleString()} mm³`, 140, currentY + 5);
+        doc.text(`Class: ${comp.classification} | Process: ${comp.manufacturingProcess}`, 15, currentY + 10);
+        const featStr = comp.machiningFeatures && comp.machiningFeatures.length > 0 ? comp.machiningFeatures.join(', ') : 'Standard Surface';
+        doc.text(`Features: ${featStr} | 512-D L2 Embedding`, 110, currentY + 10);
 
         const obbDims = comp.boundingBoxObb.dimensions.map(d => d.toFixed(1)).join(' × ');
-        doc.text(`OBB (LxWxH): ${obbDims} mm | CoM: [${comp.centroidMm.join(', ')}] mm`, 15, currentY + 11);
+        doc.text(`OBB: ${obbDims} mm | CoM: [${comp.centroidMm.join(', ')}] mm | Mass: ${comp.massKg.toFixed(4)} kg`, 15, currentY + 15);
 
         const momentsStr = comp.principalMoments.map(m => m.toExponential(2)).join(', ');
-        doc.text(`Principal Moments: [${momentsStr}] kg·mm²`, 15, currentY + 16);
+        doc.text(`Principal Moments: [${momentsStr}] kg·mm²`, 15, currentY + 20);
 
         if (comp.dfmWarnings.length > 0) {
           doc.setTextColor(185, 28, 28);
-          doc.text(`DFM Alerts: ${comp.dfmWarnings.join('; ')}`, 15, currentY + 20);
+          doc.text(`DFM Alerts: ${comp.dfmWarnings.join('; ')}`, 15, currentY + 24.5);
         } else {
           doc.setTextColor(22, 163, 74);
-          doc.text(`DFM Status: Pass — Meets standard automotive tooling constraints`, 15, currentY + 20);
+          doc.text(`DFM Status: Pass — Meets standard automotive tooling constraints`, 15, currentY + 24.5);
         }
 
-        currentY += 27;
+        currentY += 30;
       });
 
       // Section 4: Automotive DFM Audit Criteria Table

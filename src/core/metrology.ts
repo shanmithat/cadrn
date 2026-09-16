@@ -368,30 +368,38 @@ export class AnalyticalMetrology {
     // Fastener / Bolt
     if (dMax < 150.0 && dMid < 30.0 && dMax / Math.max(dMid, 1.0) >= 1.8) {
       if (Math.abs(dMin - dMid) / Math.max(dMid, 1.0) < 0.35) {
-        return { classification: ComponentClass.FASTENER_BOLT, process: ManufacturingProcess.CNC_MILLED };
+        return { classification: ComponentClass.FASTENER_BOLT, process: ManufacturingProcess.CNC_3AXIS };
       }
     }
 
     // Shaft
     if (dMax / Math.max(dMid, 1.0) >= 3.0 && Math.abs(dMin - dMid) / Math.max(dMid, 1.0) < 0.25) {
-      return { classification: ComponentClass.SHAFT, process: ManufacturingProcess.CNC_MILLED };
+      return { classification: ComponentClass.SHAFT, process: ManufacturingProcess.CNC_3AXIS };
     }
 
     // Sheet Metal Panel
     if (dMin <= 4.5 && dMid >= 45.0 && areaToVol > 0.35) {
-      return { classification: ComponentClass.SHEET_METAL_PANEL, process: ManufacturingProcess.STAMPED_FORMED };
+      return { classification: ComponentClass.SHEET_METAL_PANEL, process: ManufacturingProcess.STAMPING };
     }
 
     // Flange
     if (dMin / Math.max(dMax, 1.0) < 0.35 && Math.abs(dMid - dMax) / Math.max(dMax, 1.0) < 0.30) {
-      return { classification: ComponentClass.FLANGE, process: ManufacturingProcess.CNC_MILLED };
+      return { classification: ComponentClass.FLANGE, process: ManufacturingProcess.CNC_3AXIS };
+    }
+
+    // Suspension Arm
+    if (dMax >= 80.0 && dMax / Math.max(dMin, 1.0) >= 4.0 && dMid / Math.max(dMin, 1.0) >= 2.0) {
+      const fillFactor = volume / Math.max(dMin * dMid * dMax, 1.0);
+      if (fillFactor < 0.40) {
+        return { classification: ComponentClass.SUSPENSION_ARM, process: ManufacturingProcess.HPDC };
+      }
     }
 
     // Housing / Casing
     if (volume > 80000.0 && dMin / Math.max(dMax, 1.0) > 0.2) {
       const fillFactor = volume / Math.max(dMin * dMid * dMax, 1.0);
       if (fillFactor < 0.55) {
-        return { classification: ComponentClass.HOUSING_CASING, process: ManufacturingProcess.HIGH_PRESSURE_DIE_CAST };
+        return { classification: ComponentClass.HOUSING_CASING, process: ManufacturingProcess.HPDC };
       }
     }
 
@@ -399,7 +407,7 @@ export class AnalyticalMetrology {
     if (dMin >= 4.0 && dMin <= 40.0 && dMax >= 35.0) {
       return {
         classification: ComponentClass.BRACKET,
-        process: areaToVol > 0.15 ? ManufacturingProcess.STAMPED_FORMED : ManufacturingProcess.CNC_MILLED,
+        process: areaToVol > 0.15 ? ManufacturingProcess.STAMPING : ManufacturingProcess.CNC_3AXIS,
       };
     }
 

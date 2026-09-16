@@ -296,6 +296,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <th>Part ID</th>
                 <th>Classification</th>
                 <th>Manufacturing Process</th>
+                <th>OEM Match (BOM)</th>
                 <th>Volume (mm³)</th>
                 <th>Mass (kg)</th>
                 <th>A/V (mm⁻¹)</th>
@@ -308,6 +309,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <td><strong>{{ comp.part_id }}</strong></td>
                 <td><span class="badge badge-class">{{ comp.classification.value }}</span></td>
                 <td><span class="badge badge-process">{{ comp.manufacturing_process.value }}</span></td>
+                <td>
+                    {% if comp.oem_match %}
+                        <span class="badge badge-class" style="background:#ecfdf5;color:#065f46;border-color:#a7f3d0;">
+                            {{ comp.oem_match.part_number }} ({{ comp.oem_match.similarity_score }}%)
+                        </span>
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
                 <td>{{ "%.1f"|format(comp.volume_mm3) }}</td>
                 <td>{{ "%.4f"|format(comp.mass_kg) }}</td>
                 <td>{{ "%.3f"|format(comp.area_to_volume_ratio) }}</td>
@@ -354,6 +364,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <span class="comp-stat-label">Process:</span>
                 <span class="comp-stat-val">{{ comp.manufacturing_process.value }}</span>
             </div>
+            {% if comp.oem_match %}
+            <div class="comp-stat-row">
+                <span class="comp-stat-label">OEM BOM Match:</span>
+                <span class="comp-stat-val" style="color:#059669;">{{ comp.oem_match.part_number }} ({{ comp.oem_match.similarity_score }}%)</span>
+            </div>
+            {% endif %}
+            {% if comp.machining_features %}
+            <div class="comp-stat-row">
+                <span class="comp-stat-label">Features:</span>
+                <span class="comp-stat-val">{{ comp.machining_features|join(', ') }}</span>
+            </div>
+            {% endif %}
             <div class="comp-stat-row">
                 <span class="comp-stat-label">Volume / Mass:</span>
                 <span class="comp-stat-val">{{ "%.1f"|format(comp.volume_mm3) }} mm³ ({{ "%.4f"|format(comp.mass_kg) }} kg)</span>
@@ -585,9 +607,11 @@ class ReportGenerator:
             pdf.set_fill_color(248, 250, 252)
             pdf.rect(pdf.get_x(), pdf.get_y(), 190, 22, style="DF")
             pdf.set_font("Helvetica", "B", 8)
-            pdf.cell(40, 5, f"Part: {comp.part_id}", new_x=XPos.RIGHT, new_y=YPos.TOP)
-            pdf.cell(70, 5, f"Class: {comp.classification.value}", new_x=XPos.RIGHT, new_y=YPos.TOP)
-            pdf.cell(80, 5, f"Process: {comp.manufacturing_process.value}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            oem_part = comp.oem_match.get("part_number", "N/A") if comp.oem_match else "N/A"
+            oem_score = comp.oem_match.get("similarity_score", 0) if comp.oem_match else 0
+            pdf.cell(65, 5, f"Part: {comp.part_id} | OEM: {oem_part} ({oem_score}%)", new_x=XPos.RIGHT, new_y=YPos.TOP)
+            pdf.cell(55, 5, f"Class: {comp.classification.value}", new_x=XPos.RIGHT, new_y=YPos.TOP)
+            pdf.cell(70, 5, f"Process: {comp.manufacturing_process.value}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
             pdf.set_font("Helvetica", "", 7)
             obb_d = comp.bounding_box_obb.dimensions
