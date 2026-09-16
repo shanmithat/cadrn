@@ -1,0 +1,24 @@
+# Node
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+
+# Temporary caches
+reports_cache/
+uploads_cache/
+*.stl.temp
+temp_occ_*
+
+# Environment & IDE
+.env
+.venv/
+env/
+.vscode/
+.idea/
+.DS_Store
