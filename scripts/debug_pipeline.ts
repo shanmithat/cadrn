@@ -81,9 +81,39 @@ async function runPipelineDebug() {
 
   const parts2 = PartDecompositionEngine.segmentMesh(meshData2, 4);
   console.log(`Decomposition Result: ${parts2.length} individual parts detected!`);
-  for (const part of parts2) {
-    const profile = await PartDecompositionEngine.profileSegment(part);
-    console.log(` -> [${profile.partId}] Class: ${profile.classification} | Process: ${profile.manufacturingProcess} | Vol: ${profile.volumeMm3} mm³ | OEM: ${profile.oemMatch?.partNumber} (${profile.oemMatch?.similarityPercent}%) | Features: ${profile.machiningFeatures.join(', ')}`);
+  console.log('\n================================================================');
+  console.log('TEST 3: Real CAD Ingestion & Profiling ("GSD model 2.stp")');
+  console.log('================================================================');
+  const fs = await import('fs');
+  const path = await import('path');
+  const gsdPath = path.resolve('GSD model 2.stp');
+  if (fs.existsSync(gsdPath)) {
+    const text = fs.readFileSync(gsdPath, 'utf-8');
+    const t0 = performance.now();
+    const gsdMesh = DiscreteCADParser.parseSTEP(text);
+    const tParse = performance.now() - t0;
+    const assemblyProps = AnalyticalMetrology.computeExactMassProperties(gsdMesh.vertices, gsdMesh.indices, 1.15e-6);
+    const aabb = AnalyticalMetrology.computeAABB(gsdMesh.vertices);
+    const obb = AnalyticalMetrology.computeOrientedBoundingBox(gsdMesh.vertices);
+    console.log(`Parsed STEP CAD: ${gsdMesh.vertices.length / 3} vertices, ${gsdMesh.indices.length / 3} triangles in ${tParse.toFixed(2)} ms`);
+    console.log(`Assembly Shell Volume: ${assemblyProps.volumeMm3.toFixed(2)} mm³`);
+    console.log(`Assembly Surface Area: ${assemblyProps.surfaceAreaMm2.toFixed(2)} mm²`);
+    console.log(`Assembly Mass (1.15 g/cm³ eq.): ${(assemblyProps.massKg * 1000).toFixed(2)} g`);
+    console.log(`Center of Mass: [${assemblyProps.centroidMm.map(c => c.toFixed(2)).join(', ')}] mm`);
+    console.log(`AABB Dimensions: [${aabb.dimensions.map(d => d.toFixed(2)).join(' x ')}] mm`);
+    console.log(`OBB Dimensions: [${obb.dimensions.map(d => d.toFixed(2)).join(' x ')}] mm`);
+
+    const gsdParts = PartDecompositionEngine.segmentMesh(gsdMesh, 4);
+    console.log(`Decomposition Result: ${gsdParts.length} individual part(s) detected!`);
+    for (const part of gsdParts) {
+      const profile = await PartDecompositionEngine.profileSegment(part);
+      console.log(` -> [${profile.partId}] Class: ${profile.classification} | Process: ${profile.manufacturingProcess} | Vol: ${profile.volumeMm3} mm³ | OEM: ${profile.oemMatch?.partNumber} (${profile.oemMatch?.similarityPercent}%) | Features: ${profile.machiningFeatures.join(', ')}`);
+      if (profile.dfmWarnings && profile.dfmWarnings.length > 0) {
+        console.log(`    DFM Warnings: ${profile.dfmWarnings.join('; ')}`);
+      }
+    }
+  } else {
+    console.warn(`GSD model 2.stp not found at ${gsdPath}`);
   }
 }
 

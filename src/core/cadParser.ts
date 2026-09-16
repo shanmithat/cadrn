@@ -298,6 +298,71 @@ export class DiscreteCADParser {
       }
     }
 
+    // If no POLY_LOOPs found, parse Advanced B-Rep Topology (ADVANCED_FACE -> FACE_OUTER_BOUND -> EDGE_LOOP -> ORIENTED_EDGE -> EDGE_CURVE)
+    if (triangles.length === 0) {
+      const edgeCurves = new Map<number, [number, number]>();
+      const edgeCurveRegex = /#(\d+)\s*=\s*EDGE_CURVE\s*\([^,]*,\s*#(\d+)\s*,\s*#(\d+)/g;
+      while ((match = edgeCurveRegex.exec(text)) !== null) {
+        edgeCurves.set(parseInt(match[1], 10), [parseInt(match[2], 10), parseInt(match[3], 10)]);
+      }
+
+      const orientedEdges = new Map<number, { cid: number; sense: boolean }>();
+      const orientedEdgeRegex = /#(\d+)\s*=\s*ORIENTED_EDGE\s*\([^,]*,[^,]*,[^,]*,\s*#(\d+)\s*,\s*\.([TF])\./g;
+      while ((match = orientedEdgeRegex.exec(text)) !== null) {
+        orientedEdges.set(parseInt(match[1], 10), {
+          cid: parseInt(match[2], 10),
+          sense: match[3] === 'T',
+        });
+      }
+
+      const edgeLoops = new Map<number, number[]>();
+      const edgeLoopRegex = /#(\d+)\s*=\s*EDGE_LOOP\s*\([^,]*,\s*\(([^)]+)\)\s*\)/g;
+      while ((match = edgeLoopRegex.exec(text)) !== null) {
+        const loopId = parseInt(match[1], 10);
+        const refs = match[2].match(/#(\d+)/g);
+        if (refs) {
+          edgeLoops.set(loopId, refs.map(r => parseInt(r.slice(1), 10)));
+        }
+      }
+
+      const faceBounds = new Map<number, number>();
+      const faceBoundRegex = /#(\d+)\s*=\s*(?:FACE_OUTER_BOUND|FACE_BOUND)\s*\([^,]*,\s*#(\d+)/g;
+      while ((match = faceBoundRegex.exec(text)) !== null) {
+        faceBounds.set(parseInt(match[1], 10), parseInt(match[2], 10));
+      }
+
+      const advancedFaceRegex = /#\d+\s*=\s*ADVANCED_FACE\s*\([^,]*,\s*\(([^)]+)\)/g;
+      while ((match = advancedFaceRegex.exec(text)) !== null) {
+        const boundRefs = match[1].match(/#(\d+)/g);
+        if (!boundRefs) continue;
+        for (const bRef of boundRefs) {
+          const bId = parseInt(bRef.slice(1), 10);
+          const loopId = faceBounds.get(bId);
+          if (loopId === undefined) continue;
+          const oeIds = edgeLoops.get(loopId);
+          if (!oeIds) continue;
+
+          const polyPts: Array<[number, number, number]> = [];
+          for (const oeId of oeIds) {
+            const oe = orientedEdges.get(oeId);
+            if (!oe) continue;
+            const ec = edgeCurves.get(oe.cid);
+            if (!ec) continue;
+            const targetV = oe.sense ? ec[1] : ec[0];
+            const pt = resolvePoint(targetV);
+            if (pt) polyPts.push(pt);
+          }
+
+          if (polyPts.length >= 3) {
+            const p0 = polyPts[0];
+            for (let t = 1; t < polyPts.length - 1; t++) {
+              triangles.push([p0, polyPts[t], polyPts[t + 1]]);
+            }
+          }
+        }
+      }
+    }
+
     if (triangles.length === 0 && cartesianPoints.size >= 4) {
       const pts = Array.from(cartesianPoints.values());
       for (let i = 0; i < pts.length - 2; i += 3) {
