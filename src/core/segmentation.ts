@@ -475,8 +475,13 @@ export class PartDecompositionEngine {
             ComponentClass.HOUSING_CASING,
             ComponentClass.SHEET_METAL_PANEL,
             ComponentClass.SUSPENSION_ARM,
+            ComponentClass.SHAFT,
+            ComponentClass.GEAR,
+            ComponentClass.STRUCTURAL_FRAME,
           ];
-          predictedClass = classMap[maxIdx] || ComponentClass.UNKNOWN;
+          if (maxIdx >= 0 && maxIdx < classMap.length) {
+            predictedClass = classMap[maxIdx];
+          }
         }
 
         // 3. Manufacturing Process Head
@@ -488,9 +493,12 @@ export class PartDecompositionEngine {
             ManufacturingProcess.CNC_3AXIS,
             ManufacturingProcess.CNC_5AXIS,
             ManufacturingProcess.STAMPING,
+            ManufacturingProcess.INJECTION_MOLDED,
             ManufacturingProcess.ADDITIVE,
           ];
-          predictedProcess = mfgMap[maxMfg] || ManufacturingProcess.UNKNOWN;
+          if (maxMfg >= 0 && maxMfg < mfgMap.length) {
+            predictedProcess = mfgMap[maxMfg];
+          }
         }
 
         // 4. Machining Feature Detection Head
@@ -515,10 +523,19 @@ export class PartDecompositionEngine {
     }
 
     // Heuristic classification fallback if needed
-    if (!predictedClass || !predictedProcess) {
+    if (
+      !predictedClass ||
+      predictedClass === ComponentClass.UNKNOWN ||
+      !predictedProcess ||
+      predictedProcess === ManufacturingProcess.UNKNOWN
+    ) {
       const ruleResult = AnalyticalMetrology.classifyComponent(volume, area, obb);
-      if (!predictedClass) predictedClass = ruleResult.classification;
-      if (!predictedProcess) predictedProcess = ruleResult.process;
+      if (!predictedClass || predictedClass === ComponentClass.UNKNOWN) {
+        predictedClass = ruleResult.classification;
+      }
+      if (!predictedProcess || predictedProcess === ManufacturingProcess.UNKNOWN) {
+        predictedProcess = ruleResult.process;
+      }
     }
 
     // Heuristic feature extraction if none detected

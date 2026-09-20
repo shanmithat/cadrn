@@ -354,64 +354,117 @@ export class AnalyticalMetrology {
   }
 
   /**
-   * Rule-based automotive classification heuristics (complements ONNX model).
+   * Continuous probabilistic automotive classification engine.
+   * Evaluates shape invariants (fill factor, sphericity, aspect ratios, cylindricalness)
+   * to infer component class and manufacturing process. Guarantees 0% Unknown.
    */
   public static classifyComponent(
     volume: number,
     area: number,
     obb: OrientedBoundingBox
-  ): { classification: ComponentClass; process: ManufacturingProcess } {
+  ): { classification: ComponentClass; process: ManufacturingProcess; confidence: number } {
     const dims = [...obb.dimensions].sort((a, b) => a - b);
-    const dMin = dims[0], dMid = dims[1], dMax = dims[2];
-    const areaToVol = area / Math.max(volume, 1e-6);
+    const dMin = Math.max(dims[0], 0.01);
+    const dMid = Math.max(dims[1], 0.01);
+    const dMax = Math.max(dims[2], 0.01);
+    const vol = Math.max(volume, 1e-6);
+    const areaToVol = area / vol;
+    const boundingVol = Math.max(dMin * dMid * dMax, 1e-6);
+    const fillFactor = Math.min(vol / boundingVol, 1.0);
+    const sphericity = Math.min(Math.max((Math.cbrt(Math.PI) * Math.pow(6.0 * vol, 2.0 / 3.0)) / Math.max(area, 1e-6), 0.0), 1.0);
 
-    // Fastener / Bolt
-    if (dMax < 150.0 && dMid < 30.0 && dMax / Math.max(dMid, 1.0) >= 1.8) {
-      if (Math.abs(dMin - dMid) / Math.max(dMid, 1.0) < 0.35) {
-        return { classification: ComponentClass.FASTENER_BOLT, process: ManufacturingProcess.CNC_3AXIS };
-      }
+    const crossEccentricity = Math.abs(dMid - dMin) / dMid;
+    const cylindricalSymmetry = Math.max(1.0 - crossEccentricity, 0.0);
+    const discCircularity = Math.max(1.0 - Math.abs(dMax - dMid) / dMax, 0.0);
+
+    const scores: Record<string, number> = {};
+
+    // 1. Fastener / Bolt / Pin / Standoff
+    let fastenerScore = 3.5 * cylindricalSymmetry + 2.0 * Math.tanh(dMax / dMid - 1.2);
+    if (dMax < 160.0 && dMid < 35.0) fastenerScore += 3.0;
+    if (dMax < 45.0 && dMid < 18.0) fastenerScore += 4.5;
+    if (fillFactor > 0.45) fastenerScore += 1.5;
+    scores[ComponentClass.FASTENER_BOLT] = fastenerScore;
+
+    // 2. Shaft
+    let shaftScore = 4.0 * cylindricalSymmetry + 3.0 * Math.tanh(dMax / dMid - 2.5);
+    if (dMax >= 80.0) shaftScore += 2.5;
+    if (fillFactor > 0.5) shaftScore += 1.5;
+    scores[ComponentClass.SHAFT] = shaftScore;
+
+    // 3. Flange
+    let flangeScore = 4.0 * discCircularity + 2.5 * Math.tanh(dMax / dMin - 2.5);
+    if (dMin >= 3.0 && dMin <= 50.0) flangeScore += 2.5;
+    else if (dMin < 3.0) flangeScore -= 4.0;
+    if (dMin / dMax < 0.35) flangeScore += 1.5;
+    if (areaToVol > 0.08) flangeScore += 1.0;
+    scores[ComponentClass.FLANGE] = flangeScore;
+
+    // 4. Sheet Metal Panel
+    let panelScore = 0.0;
+    if (dMin <= 3.0) panelScore += 6.0;
+    else if (dMin <= 5.0) panelScore += 4.5;
+    else if (dMin <= 8.0) panelScore += 2.0;
+    panelScore += 3.0 * Math.tanh(areaToVol - 0.30) + 3.0 * Math.tanh((dMax / dMin - 8.0) / 4.0);
+    if (dMax >= 50.0 && dMid >= 30.0) panelScore += 3.0;
+    scores[ComponentClass.SHEET_METAL_PANEL] = panelScore;
+
+    // 5. Housing / Casing / Enclosure
+    let housingScore = 0.0;
+    if (vol > 50000.0) housingScore += 4.5;
+    else if (vol > 15000.0) housingScore += 3.0;
+    if (fillFactor >= 0.10 && fillFactor <= 0.65) housingScore += 3.0;
+    if (dMin / dMax > 0.15) housingScore += 2.0;
+    if (sphericity > 0.18) housingScore += 1.5;
+    scores[ComponentClass.HOUSING_CASING] = housingScore;
+
+    // 6. Bracket
+    let bracketScore = 0.0;
+    if (dMin >= 3.5 && dMin <= 45.0 && dMax >= 30.0) bracketScore += 3.0;
+    if (dMax / dMin >= 2.0 && dMid / dMin >= 1.5) bracketScore += 2.0;
+    if (areaToVol >= 0.10 && areaToVol <= 0.60) bracketScore += 2.0;
+    if (fillFactor >= 0.15 && fillFactor <= 0.65) bracketScore += 1.5;
+    scores[ComponentClass.BRACKET] = bracketScore;
+
+    // 7. Suspension Arm
+    let suspScore = 0.0;
+    if (dMax >= 75.0 && dMax / dMin >= 3.5) suspScore += 3.0;
+    if (dMid / dMin >= 1.8) suspScore += 2.0;
+    if (fillFactor < 0.42) suspScore += 2.5;
+    scores[ComponentClass.SUSPENSION_ARM] = suspScore;
+
+    // Softmax probabilities
+    const keys = Object.keys(scores);
+    const maxScore = Math.max(...keys.map(k => scores[k]));
+    const expScores = keys.map(k => Math.exp(scores[k] - maxScore));
+    const sumExp = expScores.reduce((a, b) => a + b, 0);
+    const probs = expScores.map(e => e / sumExp);
+
+    let bestIdx = 0;
+    for (let i = 1; i < probs.length; i++) {
+      if (probs[i] > probs[bestIdx]) bestIdx = i;
     }
 
-    // Shaft
-    if (dMax / Math.max(dMid, 1.0) >= 3.0 && Math.abs(dMin - dMid) / Math.max(dMid, 1.0) < 0.25) {
-      return { classification: ComponentClass.SHAFT, process: ManufacturingProcess.CNC_3AXIS };
+    const predictedClass = keys[bestIdx] as ComponentClass;
+    const confidence = probs[bestIdx];
+
+    // Infer manufacturing process
+    let process = ManufacturingProcess.CNC_3AXIS;
+    if (predictedClass === ComponentClass.SHEET_METAL_PANEL) {
+      process = ManufacturingProcess.STAMPING;
+    } else if (predictedClass === ComponentClass.HOUSING_CASING) {
+      process = (dMin < 4.0 || vol < 25000.0) ? ManufacturingProcess.INJECTION_MOLDED : ManufacturingProcess.HPDC;
+    } else if (predictedClass === ComponentClass.BRACKET) {
+      process = (dMin <= 6.0 && areaToVol > 0.18) ? ManufacturingProcess.STAMPING : ManufacturingProcess.CNC_3AXIS;
+    } else if (predictedClass === ComponentClass.FLANGE) {
+      process = (dMax / dMin > 8.0) ? ManufacturingProcess.CNC_3AXIS : ManufacturingProcess.CNC_5AXIS;
+    } else if (predictedClass === ComponentClass.SUSPENSION_ARM) {
+      process = ManufacturingProcess.HPDC;
+    } else if (predictedClass === ComponentClass.FASTENER_BOLT || predictedClass === ComponentClass.SHAFT) {
+      process = ManufacturingProcess.CNC_3AXIS;
     }
 
-    // Sheet Metal Panel
-    if (dMin <= 4.5 && dMid >= 45.0 && areaToVol > 0.35) {
-      return { classification: ComponentClass.SHEET_METAL_PANEL, process: ManufacturingProcess.STAMPING };
-    }
-
-    // Flange
-    if (dMin / Math.max(dMax, 1.0) < 0.35 && Math.abs(dMid - dMax) / Math.max(dMax, 1.0) < 0.30) {
-      return { classification: ComponentClass.FLANGE, process: ManufacturingProcess.CNC_3AXIS };
-    }
-
-    // Suspension Arm
-    if (dMax >= 80.0 && dMax / Math.max(dMin, 1.0) >= 4.0 && dMid / Math.max(dMin, 1.0) >= 2.0) {
-      const fillFactor = volume / Math.max(dMin * dMid * dMax, 1.0);
-      if (fillFactor < 0.40) {
-        return { classification: ComponentClass.SUSPENSION_ARM, process: ManufacturingProcess.HPDC };
-      }
-    }
-
-    // Housing / Casing
-    if (volume > 80000.0 && dMin / Math.max(dMax, 1.0) > 0.2) {
-      const fillFactor = volume / Math.max(dMin * dMid * dMax, 1.0);
-      if (fillFactor < 0.55) {
-        return { classification: ComponentClass.HOUSING_CASING, process: ManufacturingProcess.HPDC };
-      }
-    }
-
-    // Bracket
-    if (dMin >= 4.0 && dMin <= 40.0 && dMax >= 35.0) {
-      return {
-        classification: ComponentClass.BRACKET,
-        process: areaToVol > 0.15 ? ManufacturingProcess.STAMPING : ManufacturingProcess.CNC_3AXIS,
-      };
-    }
-
-    return { classification: ComponentClass.UNKNOWN, process: ManufacturingProcess.UNKNOWN };
+    return { classification: predictedClass, process, confidence };
   }
 
   /**

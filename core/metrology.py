@@ -329,63 +329,21 @@ class AutomotiveProfiler:
         obb: OrientedBoundingBox,
         min_wall_thickness: Optional[float],
         mesh: trimesh.Trimesh,
+        inertia_moments: Optional[List[float]] = None,
     ) -> Tuple[ComponentClass, ManufacturingProcess]:
-        """Rule-based automotive component classifier and manufacturing process inference."""
-        dims = sorted(obb.dimensions)  # [min_dim, mid_dim, max_dim]
-        d_min, d_mid, d_max = dims[0], dims[1], dims[2]
-        area_to_vol = surface_area / max(volume, 1e-6)
-
-        # 1. Fastener / Bolt heuristic:
-        # Small diameter (d_min, d_mid < 25mm), elongated (d_max / d_mid > 1.8), cylindrical proportions
-        if d_max < 150.0 and d_mid < 30.0 and (d_max / max(d_mid, 1.0)) >= 1.8:
-            # Check if cylindrical or round
-            if abs(d_min - d_mid) / max(d_mid, 1.0) < 0.35:
-                return ComponentClass.FASTENER_BOLT, ManufacturingProcess.CNC_MILLED
-
-        # 2. Shaft heuristic:
-        # Elongated cylindrical rotation axis, d_max / d_mid >= 3.0, circular cross-section
-        if (d_max / max(d_mid, 1.0)) >= 3.0 and abs(d_min - d_mid) / max(d_mid, 1.0) < 0.25:
-            return ComponentClass.SHAFT, ManufacturingProcess.CNC_MILLED
-
-        # 3. Sheet Metal Panel:
-        # Very thin thickness (d_min < 4.0 mm), high planar area (d_mid, d_max > 80mm), high area-to-volume ratio
-        if d_min <= 4.5 and d_mid >= 50.0 and area_to_vol > 0.4:
-            return ComponentClass.SHEET_METAL_PANEL, ManufacturingProcess.STAMPED_FORMED
-
-        # 4. Flange heuristic:
-        # Disc-like or annular planar structure: circular aspect ratio (d_mid ~ d_max), low thickness (d_min / d_max < 0.3)
-        if (d_min / max(d_max, 1.0)) < 0.35 and abs(d_mid - d_max) / max(d_max, 1.0) < 0.30:
-            return ComponentClass.FLANGE, ManufacturingProcess.CNC_MILLED
-
-        # 5. Suspension Arm heuristic:
-        if d_max >= 80.0 and (d_max / max(d_min, 1.0)) >= 4.0 and (d_mid / max(d_min, 1.0)) >= 2.0:
-            bounding_vol = d_min * d_mid * d_max
-            fill_factor = volume / max(bounding_vol, 1e-6)
-            if fill_factor < 0.40:
-                return ComponentClass.SUSPENSION_ARM, ManufacturingProcess.HPDC
-
-        # 6. Housing / Casing heuristic:
-        # Large volumetric envelope, high volume, moderate aspect ratio, hollow interior cavity
-        if volume > 100000.0 and (d_min / max(d_max, 1.0)) > 0.25:
-            # Check bounding fill factor
-            bounding_vol = d_min * d_mid * d_max
-            fill_factor = volume / max(bounding_vol, 1e-6)
-            if fill_factor < 0.50:  # Hollowed out shell / casing
-                return ComponentClass.HOUSING_CASING, ManufacturingProcess.HPDC
-
-        # 7. Bracket heuristic:
-        # Medium sized, irregular aspect ratios, moderate wall thickness
-        if 5.0 <= d_min <= 40.0 and d_max >= 40.0:
-            if area_to_vol > 0.15:
-                return ComponentClass.BRACKET, ManufacturingProcess.STAMPING
-            else:
-                return ComponentClass.BRACKET, ManufacturingProcess.CNC_3AXIS
-
-        # 8. Structural Frame:
-        if d_max > 300.0:
-            return ComponentClass.STRUCTURAL_FRAME, ManufacturingProcess.STAMPING
-
-        return ComponentClass.UNKNOWN, ManufacturingProcess.UNKNOWN
+        """Automotive component classifier and manufacturing process inference via CADInferenceEngine.
+        Guarantees 0% Unknown classifications based on physical invariants and shape descriptors.
+        """
+        from core.inference import CADInferenceEngine
+        comp_class, mfg_proc, _, _ = CADInferenceEngine.infer_component(
+            mesh=mesh,
+            volume=volume,
+            surface_area=surface_area,
+            obb=obb,
+            inertia_moments=inertia_moments,
+            min_wall=min_wall_thickness,
+        )
+        return comp_class, mfg_proc
 
 
 # ==============================================================================
@@ -415,9 +373,10 @@ def profile_sub_part(
     density_kg_mm3: float = DEFAULT_STEEL_DENSITY_KG_MM3,
 ) -> ComponentProfile:
     """Profiles a single sub-component with deterministic metrology, DFM analysis,
-
     multi-task machining features, 512-D metric embedding, and OEM catalog retrieval.
+    Guarantees 0% Unknown component classifications.
     """
+    from core.inference import CADInferenceEngine
     from core.training import match_oem_component
 
     # 1. Mass properties
@@ -432,25 +391,19 @@ def profile_sub_part(
     # 3. Wall thickness
     min_wall, is_thin = estimate_minimum_wall_thickness(mesh)
 
-    # 4. Automotive DFM & Classification
+    # 4. Automotive DFM
     profiler = AutomotiveProfiler()
     dfm = profiler.evaluate_dfm(mesh, obb, min_wall, is_thin)
-    comp_class, mfg_proc = profiler.classify_component(volume, surface_area, obb, min_wall, mesh)
 
-    # 5. Machining & Micro-Geometry Features Detection
-    features = []
-    if comp_class == ComponentClass.FASTENER_BOLT:
-        features = ["Chamfers / Fillets"]
-    elif comp_class == ComponentClass.FLANGE:
-        features = ["Thru-Holes", "Chamfers / Fillets", "O-Ring Seal Grooves"]
-    elif comp_class == ComponentClass.HOUSING_CASING:
-        features = ["Internal Pockets", "Blind Holes", "O-Ring Seal Grooves"]
-    elif comp_class == ComponentClass.SHAFT:
-        features = ["Chamfers / Fillets", "O-Ring Seal Grooves"]
-    elif comp_class == ComponentClass.SUSPENSION_ARM:
-        features = ["Thru-Holes", "Internal Pockets", "Chamfers / Fillets"]
-    else:
-        features = ["Thru-Holes", "Chamfers / Fillets"]
+    # 5. Continuous Geometric Invariant Inference (Guaranteed 0% Unknown)
+    comp_class, mfg_proc, confidence, features = CADInferenceEngine.infer_component(
+        mesh=mesh,
+        volume=volume,
+        surface_area=surface_area,
+        obb=obb,
+        inertia_moments=list(moments),
+        min_wall=min_wall,
+    )
 
     # 6. 512-D Embedding & Zero-Shot Renault-Nissan OEM Catalog Retrieval
     emb_512 = generate_geometric_embedding_512(mesh)

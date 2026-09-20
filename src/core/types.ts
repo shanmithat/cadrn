@@ -27,6 +27,7 @@ export enum ManufacturingProcess {
   CNC_5AXIS = '5-Axis CNC Milled',
   STAMPING = 'Sheet Metal Stamping',
   ADDITIVE = 'Additive Manufacturing',
+  INJECTION_MOLDED = 'Injection Molded',
   UNKNOWN = 'Unknown / Undetermined',
 }
 
