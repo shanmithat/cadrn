@@ -6,8 +6,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AutoCAD-Profiler — Serverless CAD Analytics (Renault Nissan R&D)</title>
     <!-- Client-side COOP/COEP Header Emulation for GitHub Pages -->
-    <script src="/coi-serviceworker.js"></script>
-
+    <script src="./coi-serviceworker.js"></script>
+    <script>
+      // Fallback: If GitHub Pages serves from repository root, automatically forward to compiled production bundle in docs/
+      if (window.location.hostname.endsWith('github.io') && !window.location.pathname.includes('/docs/')) {
+        var target = window.location.pathname.replace(/\/?$/, '/docs/') + window.location.search + window.location.hash;
+        window.location.replace(target);
+      }
+    </script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased min-h-screen selection:bg-red-900 selection:text-white">
     <div id="root"></div>
