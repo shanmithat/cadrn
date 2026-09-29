@@ -132,6 +132,8 @@ class ComponentProfile(BaseModel):
     mass_kg: float = Field(..., description="Mass assuming standard steel density 7850 kg/m^3")
     face_count: int = Field(0, description="Number of B-Rep faces or mesh facets comprising this sub-part")
     machining_features: List[str] = Field(default_factory=list, description="Detected machining features (thru-holes, blind holes, pockets, chamfers, grooves)")
+    manufacturing_features_report: Optional[Dict[str, Any]] = Field(None, description="Granular hole schedule, pocket dimensions, and tooling report")
+    gdt_report: Optional[Dict[str, Any]] = Field(None, description="ASME Y14.5 / ISO 1101 GD&T report and ISO 286 fit allocations")
     oem_match: Optional[Dict[str, Any]] = Field(None, description="Zero-shot cosine similarity match from Renault-Nissan OEM Catalog")
     embedding_512: Optional[List[float]] = Field(None, description="512-D L2-normalized metric learning embedding vector")
 
@@ -166,5 +168,7 @@ class CADProfileResponse(BaseModel):
     ingestion_path: str = Field(..., description="Ingestion pipeline used ('parametric_brep' or 'discrete_mesh')")
     assembly_summary: Optional[AssemblySummary] = Field(None, description="Global assembly metrology summary")
     components: List[ComponentProfile] = Field(default_factory=list, description="List of segmented constituent parts")
+    manufacturing_features_report: Optional[Dict[str, Any]] = Field(None, description="Exhaustive manufacturing features, hole schedule, and tooling summary")
+    gdt_report: Optional[Dict[str, Any]] = Field(None, description="ASME Y14.5 / ISO 1101 GD&T report, Datums, FCFs, and fits")
     execution_time_seconds: Optional[float] = Field(None, description="Total pipeline execution duration in seconds")
     error: Optional[str] = Field(None, description="Error trace if task failed")

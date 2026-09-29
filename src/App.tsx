@@ -21,11 +21,14 @@ import { FileUploadZone } from './components/FileUploadZone';
 import { ReportExportModal } from './components/ReportExportModal';
 import { AnalyticalMetrology } from './core/metrology';
 import { PartDecompositionEngine } from './core/segmentation';
+import { ManufacturingFeatureExtractor } from './core/manufacturingFeatures';
+import { GDTEngine } from './core/gdtEngine';
 import {
   AssemblySummary,
   CADModelProfile,
   CADProcessingProgress,
   ComponentProfile,
+  ManufacturingFeaturesReport,
 } from './core/types';
 import { CADWorkerClient } from './workers/workerClient';
 
@@ -103,6 +106,33 @@ export const App: React.FC = () => {
         totalSurfaceAreaMm2: Math.round(totalArea * 10) / 10,
       };
 
+      // Step 5: Dissect CAD for Manufacturing Features & GD&T Controls
+      setProgress({
+        stage: 'inferring',
+        progressPercent: 92,
+        message: 'Extracting machining features, hole schedules & GD&T controls...',
+      });
+
+      let manufacturingFeatures: ManufacturingFeaturesReport;
+      const lowerName = file.name.toLowerCase();
+      if (lowerName.endsWith('.step') || lowerName.endsWith('.stp')) {
+        const stepText = await file.text();
+        manufacturingFeatures = ManufacturingFeatureExtractor.extractFromStepText(stepText);
+      } else {
+        manufacturingFeatures = ManufacturingFeatureExtractor.extractFromMesh(
+          meshData.vertices,
+          meshData.indices,
+          meshData.faceNormals,
+          bounds
+        );
+      }
+
+      const gdtReport = GDTEngine.evaluateGDT(
+        manufacturingFeatures.holes,
+        manufacturingFeatures.holePatterns,
+        manufacturingFeatures.planarFaces
+      );
+
       const totalTime = performance.now() - startTime;
 
       setModelProfile({
@@ -111,6 +141,8 @@ export const App: React.FC = () => {
         ingestionPath,
         assemblySummary: summary,
         components,
+        manufacturingFeatures,
+        gdtReport,
         rawVertices: meshData.vertices,
         rawNormals: meshData.normals,
         rawIndices: meshData.indices,
@@ -288,6 +320,8 @@ export const App: React.FC = () => {
               onSelectPart={setSelectedPartId}
               fileName={modelProfile.fileName}
               executionTimeMs={modelProfile.executionTimeMs}
+              manufacturingFeatures={modelProfile.manufacturingFeatures}
+              gdtReport={modelProfile.gdtReport}
             />
           </div>
         ) : (
@@ -328,6 +362,8 @@ export const App: React.FC = () => {
           summary={modelProfile.assemblySummary}
           components={modelProfile.components}
           executionTimeMs={modelProfile.executionTimeMs}
+          manufacturingFeatures={modelProfile.manufacturingFeatures}
+          gdtReport={modelProfile.gdtReport}
         />
       )}
 

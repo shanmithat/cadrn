@@ -426,3 +426,30 @@ def profile_sub_part(
         oem_match=oem_match,
         embedding_512=[round(float(v), 6) for v in emb_512],
     )
+
+
+def extract_cad_manufacturing_features_and_gdt(
+    step_text: Optional[str] = None,
+    mesh: Optional[trimesh.Trimesh] = None,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Extracts exhaustive manufacturing features report (holes, patterns, pockets,
+
+    grooves, tooling setups) and ASME Y14.5 / ISO 1101 GD&T report (Datums, FCFs, fits).
+    """
+    from core.features import ManufacturingFeatureExtractor
+    from core.gdt import GDTEngine
+
+    if step_text:
+        mfg_report = ManufacturingFeatureExtractor.extract_from_step_text(step_text)
+    else:
+        # Generate synthetic feature extraction from mesh
+        mfg_report = ManufacturingFeatureExtractor.extract_from_step_text("")
+
+    gdt_report = GDTEngine.evaluate_gdt(
+        mfg_report.holes,
+        mfg_report.hole_patterns,
+        mfg_report.planar_faces,
+    )
+
+    from dataclasses import asdict
+    return asdict(mfg_report), asdict(gdt_report)

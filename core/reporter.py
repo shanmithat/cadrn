@@ -478,6 +478,8 @@ class ReportGenerator:
             com=com,
             box_dims=box_dims,
             components=response.components,
+            mfg_features=response.manufacturing_features_report,
+            gdt=response.gdt_report,
             exec_time=response.execution_time_seconds,
         )
         return html_out
